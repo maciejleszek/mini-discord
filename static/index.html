@@ -2,30 +2,32 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>FastAPI Discord Clone</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Discord</title>
     <style>
         body { background: #313338; color: #dbdee1; font-family: sans-serif; margin: 0; display: flex; height: 100vh; }
         .sidebar { width: 240px; background: #2b2d31; padding: 20px; display: flex; flex-direction: column; border-right: 1px solid #1e1f22; }
         .main { flex: 1; display: flex; flex-direction: column; }
-        #chat { flex: 1; overflow-y: auto; padding: 20px; }
-        .msg { background: #383a40; padding: 8px; margin-bottom: 5px; border-radius: 5px; }
-        .input-box { padding: 20px; }
-        input { width: 100%; padding: 10px; border-radius: 5px; border: none; background: #404249; color: white; }
-        button { background: #5865f2; color: white; border: none; padding: 10px; cursor: pointer; border-radius: 5px; width: 100%; margin-top: 10px; }
+        #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 5px; }
+        .msg { background: #383a40; padding: 8px; border-radius: 5px; width: fit-content; }
+        .input-box { padding: 20px; background: #313338; }
+        input { width: 100%; padding: 12px; border-radius: 5px; border: none; background: #404249; color: white; outline: none; box-sizing: border-box; }
+        button { background: #5865f2; color: white; border: none; padding: 12px; cursor: pointer; border-radius: 5px; width: 100%; font-weight: bold; margin-top: auto; }
+        button:hover { background: #4752c4; }
     </style>
 </head>
 <body>
     <div class="sidebar">
         <h3># ogólny</h3>
-        <p id="my-id" style="font-size: 0.7rem;"></p>
+        <p id="my-id" style="font-size: 0.7rem; color: #949ba4;"></p>
         <button id="voice-btn">Połącz Głos</button>
     </div>
     <div class="main">
         <div id="chat"></div>
         <div class="input-box">
-            <input type="text" id="msg-input" placeholder="Napisz do kolegów z Londynu...">
+            <input type="text" id="msg-input" placeholder="Napisz do kolegów...">
         </div>
     </div>
-    <script src="static/script.js"></script>
+    <script src="/static/script.js"></script>
 </body>
 </html>

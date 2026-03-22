@@ -1,78 +1,111 @@
-const clientId = "User_" + Math.random().toString(36).substr(2, 4);
-const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${clientId}`);
+document.addEventListener('DOMContentLoaded', () => {
+    const clientId = "User_" + Math.random().toString(36).substr(2, 4);
+    const myIdDisplay = document.getElementById('my-id');
+    if (myIdDisplay) myIdDisplay.innerText = "Twoje ID: " + clientId;
 
-const peers = {}; // Przechowuje połączenia RTCPeerConnection
-const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    // Ustalanie protokołu WebSocket (ws dla http, wss dla https)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/${clientId}`;
+    const ws = new WebSocket(wsUrl);
 
-let localStream;
+    const chat = document.getElementById('chat');
+    const msgInput = document.getElementById('msg-input');
+    const voiceBtn = document.getElementById('voice-btn');
 
-// --- OBSŁUGA WEBSOCKET ---
-ws.onmessage = async (event) => {
-    const data = JSON.parse(event.data);
+    // Konfiguracja WebRTC (serwery Google STUN)
+    const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    const peers = {}; 
+    let localStream;
 
-    if (data.type === 'text') {
-        appendMessage(data.user, data.text);
-    } else if (data.type === 'user-joined') {
-        console.log("Nowy użytkownik:", data.userId);
-        if (localStream) callUser(data.userId);
-    } else if (data.offer) {
-        handleOffer(data.offer, data.from);
-    } else if (data.answer) {
-        peers[data.from].setRemoteDescription(new RTCSessionDescription(data.answer));
-    } else if (data.candidate) {
-        peers[data.from].addIceCandidate(new RTCIceCandidate(data.candidate));
-    }
-};
+    ws.onopen = () => console.log("Połączono z serwerem FastAPI jako " + clientId);
 
-// --- FUNKCJE GŁOSOWE ---
-async function startVoice() {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    document.getElementById('voice-btn').innerText = "Głos: ON 🔊";
-    document.getElementById('voice-btn').style.background = "#23a559";
-}
+    // --- OBSŁUGA CZATU I SYGNALIZACJI ---
+    ws.onmessage = async (event) => {
+        const data = JSON.parse(event.data);
 
-async function callUser(targetId) {
-    const pc = createPeerConnection(targetId);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    ws.send(JSON.stringify({ offer, target: targetId, from: clientId }));
-}
-
-async function handleOffer(offer, fromId) {
-    const pc = createPeerConnection(fromId);
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    ws.send(JSON.stringify({ answer, target: fromId, from: clientId }));
-}
-
-function createPeerConnection(targetId) {
-    const pc = new RTCPeerConnection(config);
-    peers[targetId] = pc;
-
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-    pc.onicecandidate = (event) => {
-        if (event.candidate) {
-            ws.send(JSON.stringify({ candidate: event.candidate, target: targetId, from: clientId }));
+        // 1. Obsługa tekstu
+        if (data.type === 'text') {
+            appendMessage(data.user, data.text);
+        } 
+        // 2. Obsługa WebRTC (Sygnalizacja głosowa)
+        else if (data.type === 'user-joined') {
+            if (localStream) callUser(data.userId);
+        } else if (data.offer) {
+            handleOffer(data.offer, data.from);
+        } else if (data.answer) {
+            peers[data.from].setRemoteDescription(new RTCSessionDescription(data.answer));
+        } else if (data.candidate) {
+            peers[data.from].addIceCandidate(new RTCIceCandidate(data.candidate));
         }
     };
 
-    pc.ontrack = (event) => {
-        const audio = document.createElement('audio');
-        audio.srcObject = event.streams[0];
-        audio.autoplay = true;
-        document.body.appendChild(audio); // Ukryty element audio
+    // --- FUNKCJE CZATU ---
+    msgInput.onkeypress = (e) => {
+        if (e.key === 'Enter' && msgInput.value.trim() !== "") {
+            const payload = { type: 'text', user: clientId, text: msgInput.value };
+            ws.send(JSON.stringify(payload));
+            appendMessage("Ty", msgInput.value);
+            msgInput.value = "";
+        }
     };
 
-    return pc;
-}
+    function appendMessage(user, text) {
+        const div = document.createElement('div');
+        div.className = 'msg';
+        div.innerHTML = `<b>${user}:</b> ${text}`;
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+    }
 
-// Obsługa przycisku i czatu (uproszczona)
-document.getElementById('voice-btn').onclick = startVoice;
-function appendMessage(user, text) {
-    const div = document.createElement('div');
-    div.innerHTML = `<b>${user}:</b> ${text}`;
-    document.getElementById('chat').appendChild(div);
-}
+    // --- FUNKCJE GŁOSOWE (WebRTC) ---
+    voiceBtn.onclick = async () => {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            voiceBtn.innerText = "Głos: Aktywny 🔊";
+            voiceBtn.style.background = "#23a559";
+            
+            // Poinformuj innych, że jesteśmy gotowi do rozmowy
+            ws.send(JSON.stringify({ type: 'user-joined', userId: clientId }));
+        } catch (err) {
+            console.error("Błąd mikrofonu:", err);
+            alert("Nie można uzyskać dostępu do mikrofonu. Użyj localhost lub HTTPS.");
+        }
+    };
+
+    async function callUser(targetId) {
+        const pc = createPeerConnection(targetId);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        ws.send(JSON.stringify({ offer, target: targetId, from: clientId }));
+    }
+
+    async function handleOffer(offer, fromId) {
+        const pc = createPeerConnection(fromId);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ answer, target: fromId, from: clientId }));
+    }
+
+    function createPeerConnection(targetId) {
+        const pc = new RTCPeerConnection(iceConfig);
+        peers[targetId] = pc;
+
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                ws.send(JSON.stringify({ candidate: event.candidate, target: targetId, from: clientId }));
+            }
+        };
+
+        pc.ontrack = (event) => {
+            const audio = document.createElement('audio');
+            audio.srcObject = event.streams[0];
+            audio.autoplay = true;
+            document.body.appendChild(audio);
+        };
+
+        return pc;
+    }
+});
