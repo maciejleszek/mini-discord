@@ -21,18 +21,20 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # 3. Zarządzanie połączeniami
 class ConnectionManager:
     def __init__(self):
-        # Słownik: client_id -> WebSocket
         self.active_connections: dict[str, WebSocket] = {}
 
     async def connect(self, client_id: str, websocket: WebSocket):
         await websocket.accept()
         self.active_connections[client_id] = websocket
-        print(f"Połączono: {client_id}")
+        # Wysyłamy nowemu użytkownikowi listę wszystkich obecnych
+        users = list(self.active_connections.keys())
+        await websocket.send_text(json.dumps({"type": "user-list", "users": users}))
+        # Informujemy innych o nowym graczu
+        await self.broadcast(json.dumps({"type": "user-joined", "userId": client_id}), client_id)
 
     def disconnect(self, client_id: str):
         if client_id in self.active_connections:
             del self.active_connections[client_id]
-            print(f"Rozłączono: {client_id}")
 
     async def broadcast(self, message: str, sender_id: str):
         for cid, connection in self.active_connections.items():

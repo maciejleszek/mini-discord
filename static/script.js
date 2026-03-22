@@ -1,49 +1,79 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // 1. Inicjalizacja danych użytkownika
     const clientId = "User_" + Math.random().toString(36).substr(2, 4);
     const myIdDisplay = document.getElementById('my-id');
     if (myIdDisplay) myIdDisplay.innerText = "Twoje ID: " + clientId;
 
-    // Ustalanie protokołu WebSocket (ws dla http, wss dla https)
+    // 2. Połączenie z WebSocketem
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/${clientId}`;
     const ws = new WebSocket(wsUrl);
 
+    // 3. Elementy DOM
     const chat = document.getElementById('chat');
     const msgInput = document.getElementById('msg-input');
     const voiceBtn = document.getElementById('voice-btn');
 
-    // Konfiguracja WebRTC (serwery Google STUN)
+    // Tworzymy kontener na listę osób online, jeśli nie istnieje
+    let userListDiv = document.getElementById('user-list');
+    if (!userListDiv) {
+        userListDiv = document.createElement('div');
+        userListDiv.id = 'user-list';
+        userListDiv.style = "font-size: 0.8rem; color: #23a559; margin-bottom: 15px; padding: 10px; background: #1e1f22; border-radius: 4px;";
+        document.querySelector('.sidebar').prepend(userListDiv);
+    }
+
+    // 4. Konfiguracja WebRTC
     const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-    const peers = {}; 
+    const peers = {};
     let localStream;
 
-    ws.onopen = () => console.log("Połączono z serwerem FastAPI jako " + clientId);
+    ws.onopen = () => console.log("Połączono z serwerem jako: " + clientId);
 
-    // --- OBSŁUGA CZATU I SYGNALIZACJI ---
+    // --- OBSŁUGA KOMUNIKACJI (WebSocket) ---
     ws.onmessage = async (event) => {
         const data = JSON.parse(event.data);
 
-        // 1. Obsługa tekstu
-        if (data.type === 'text') {
-            appendMessage(data.user, data.text);
-        } 
-        // 2. Obsługa WebRTC (Sygnalizacja głosowa)
-        else if (data.type === 'user-joined') {
-            if (localStream) callUser(data.userId);
-        } else if (data.offer) {
-            handleOffer(data.offer, data.from);
-        } else if (data.answer) {
-            peers[data.from].setRemoteDescription(new RTCSessionDescription(data.answer));
-        } else if (data.candidate) {
-            peers[data.from].addIceCandidate(new RTCIceCandidate(data.candidate));
+        switch(data.type) {
+            case 'user-list':
+                userListDiv.innerHTML = "<b>Online:</b><br>" + data.users.join('<br>');
+                break;
+
+            case 'text':
+                appendMessage(data.user, data.text);
+                break;
+
+            case 'user-joined':
+                console.log("Nowa osoba dołączyła:", data.userId);
+                // Jeśli my mamy włączony mikrofon, dzwonimy do nowej osoby
+                if (localStream) callUser(data.userId);
+                break;
+
+            case 'user-left':
+                if (peers[data.userId]) {
+                    peers[data.userId].close();
+                    delete peers[data.userId];
+                    const audioEl = document.getElementById(`audio-${data.userId}`);
+                    if (audioEl) audioEl.remove();
+                }
+                break;
+
+            // Sygnalizacja WebRTC (negocjacja połączenia)
+            default:
+                if (data.offer) {
+                    handleOffer(data.offer, data.from);
+                } else if (data.answer) {
+                    if (peers[data.from]) await peers[data.from].setRemoteDescription(new RTCSessionDescription(data.answer));
+                } else if (data.candidate) {
+                    if (peers[data.from]) await peers[data.from].addIceCandidate(new RTCIceCandidate(data.candidate));
+                }
         }
     };
 
     // --- FUNKCJE CZATU ---
     msgInput.onkeypress = (e) => {
         if (e.key === 'Enter' && msgInput.value.trim() !== "") {
-            const payload = { type: 'text', user: clientId, text: msgInput.value };
-            ws.send(JSON.stringify(payload));
+            ws.send(JSON.stringify({ type: 'text', user: clientId, text: msgInput.value }));
             appendMessage("Ty", msgInput.value);
             msgInput.value = "";
         }
@@ -59,16 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- FUNKCJE GŁOSOWE (WebRTC) ---
     voiceBtn.onclick = async () => {
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            voiceBtn.innerText = "Głos: Aktywny 🔊";
-            voiceBtn.style.background = "#23a559";
-            
-            // Poinformuj innych, że jesteśmy gotowi do rozmowy
-            ws.send(JSON.stringify({ type: 'user-joined', userId: clientId }));
-        } catch (err) {
-            console.error("Błąd mikrofonu:", err);
-            alert("Nie można uzyskać dostępu do mikrofonu. Użyj localhost lub HTTPS.");
+        if (!localStream) {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                voiceBtn.innerText = "Głos: ON 🔊";
+                voiceBtn.style.background = "#23a559";
+
+                // Po aktywacji mikrofonu wysyłamy info do serwera, by inni nas "usłyszeli"
+                ws.send(JSON.stringify({ type: 'user-joined', userId: clientId }));
+            } catch (err) {
+                alert("Błąd mikrofonu! Safari wymaga HTTPS lub localhost.");
+            }
         }
     };
 
@@ -91,19 +122,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const pc = new RTCPeerConnection(iceConfig);
         peers[targetId] = pc;
 
+        // Dodaj nasz głos do połączenia
         localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
+        // Wysyłanie kandydatów sieciowych (ICE)
         pc.onicecandidate = (event) => {
             if (event.candidate) {
                 ws.send(JSON.stringify({ candidate: event.candidate, target: targetId, from: clientId }));
             }
         };
 
+        // Odbieranie głosu od kolegi
         pc.ontrack = (event) => {
-            const audio = document.createElement('audio');
+            let audio = document.getElementById(`audio-${targetId}`);
+            if (!audio) {
+                audio = document.createElement('audio');
+                audio.id = `audio-${targetId}`;
+                audio.autoplay = true;
+                document.body.appendChild(audio);
+            }
             audio.srcObject = event.streams[0];
-            audio.autoplay = true;
-            document.body.appendChild(audio);
         };
 
         return pc;
