@@ -17,10 +17,12 @@
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <h3># ogólny</h3>
-        <p id="my-id" style="font-size: 0.7rem; color: #949ba4;"></p>
+    <div class="voice-controls" style="display: flex; flex-direction: column; gap: 10px; margin-top: auto;">
         <button id="voice-btn">Połącz Głos</button>
+        <div id="active-controls" style="display: none; flex-direction: column; gap: 10px;">
+            <button id="mute-btn" style="background: #4e5058;">Wycisz Mikrofon</button>
+            <button id="leave-btn" style="background: #da373c;">Rozłącz się</button>
+        </div>
     </div>
     <div class="main">
         <div id="chat"></div>
