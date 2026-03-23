@@ -108,26 +108,48 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // Znajdź tę funkcję w swoim script.js i podmień ją na tę wersję:
     function createPC(tid) {
         const pc = new RTCPeerConnection(iceConfig);
         peers[tid] = pc;
-        localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+        if (localStream) {
+            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+        }
 
         pc.onicecandidate = e => {
-            if (e.candidate) ws.send(JSON.stringify({ candidate: e.candidate, target: tid, from: clientId }));
+            if(e.candidate) ws.send(JSON.stringify({candidate:e.candidate, target:tid, from:clientId}));
         };
 
-        pc.ontrack = e => {
+        pc.ontrack = (e) => {
+            console.log("Otrzymano strumień audio od:", tid);
             let audio = document.getElementById(`audio-${tid}`);
             if (!audio) {
                 audio = document.createElement('audio');
                 audio.id = `audio-${tid}`;
                 audio.autoplay = true;
-                audio.setAttribute('playsinline', 'true'); // Fix dla iPhone
+                audio.controls = false;
+                audio.setAttribute('playsinline', 'true'); // Kluczowe dla iOS
                 document.body.appendChild(audio);
             }
             audio.srcObject = e.streams[0];
+
+            // Wymuszenie startu po otrzymaniu tracka
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.log("Autoplay zablokowany. Dodaję przycisk odblokowania.");
+                    // Jeśli system zablokuje dźwięk, każda wiadomość na czacie go odblokuje
+                    document.addEventListener('click', () => audio.play(), { once: true });
+                });
+            }
         };
+
+        // Monitorowanie stanu połączenia
+        pc.onconnectionstatechange = () => {
+            console.log("Stan połączenia z", tid, ":", pc.connectionState);
+        };
+
         return pc;
     }
 
