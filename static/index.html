@@ -3,67 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mini Discord</title>
+    <title>Gildia PRO</title>
     <style>
-        :root { --bg-main: #313338; --bg-sidebar: #2b2d31; --discord-blue: #5865f2; --text-muted: #949ba4; }
-        body { background: var(--bg-main); color: #dbdee1; font-family: sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        :root { --bg-dark: #1e1f22; --bg-main: #313338; --bg-side: #2b2d31; --accent: #5865f2; --success: #23a559; --danger: #da373c; --text: #dbdee1; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { background: var(--bg-dark); color: var(--text); font-family: sans-serif; margin: 0; display: flex; height: 100dvh; overflow: hidden; }
 
-        #login-overlay { position: fixed; inset: 0; background: #1e1f22; z-index: 1000; display: flex; align-items: center; justify-content: center; }
-        .login-box { background: var(--bg-main); padding: 30px; border-radius: 8px; text-align: center; width: 300px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+        #login-overlay { position: fixed; inset: 0; background: var(--bg-dark); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .login-box { background: var(--bg-main); padding: 30px; border-radius: 12px; width: 100%; max-width: 350px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 
-        .sidebar { width: 240px; background: var(--bg-sidebar); display: flex; flex-direction: column; padding: 15px; border-right: 1px solid #1e1f22; box-sizing: border-box; }
-        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .sidebar { width: 260px; background: var(--bg-side); display: flex; flex-direction: column; border-right: 1px solid #1e1f22; }
+        .main { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); position: relative; }
 
-        #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-        .msg { background: #383a40; padding: 10px; border-radius: 8px; width: fit-content; max-width: 85%; word-wrap: break-word; }
-        .msg b { color: var(--discord-blue); font-size: 0.9rem; }
-        .msg-time { font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-left: 5px; }
-        .chat-img { max-width: 100%; border-radius: 5px; margin-top: 5px; cursor: pointer; display: block; border: 1px solid #4e5058; }
+        #chat { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .msg { background: #383a40; padding: 10px 15px; border-radius: 10px; max-width: 85%; align-self: flex-start; word-wrap: break-word; }
+        .msg b { color: var(--accent); font-size: 0.85rem; display: block; margin-bottom: 3px; }
+        .msg img { max-width: 100%; border-radius: 8px; margin-top: 5px; display: block; border: 1px solid #4e5058; }
+        .msg-time { color: #949ba4; font-size: 0.7rem; font-weight: normal; margin-left: 5px; }
 
-        .input-box { padding: 20px; display: flex; gap: 10px; align-items: center; background: var(--bg-main); }
-        input[type="text"] { flex: 1; padding: 12px; border-radius: 5px; border: none; background: #383a40; color: white; outline: none; }
+        .voice-card { background: #232428; margin: 10px; padding: 15px; border-radius: 10px; }
+        #meter-container { width: 100%; height: 10px; background: #111; border-radius: 5px; margin: 10px 0; display: none; overflow: hidden; border: 1px solid #444; }
+        #meter-bar { width: 0%; height: 100%; background: var(--success); transition: width 0.05s; }
 
-        .voice-section { margin-top: auto; background: #232428; padding: 10px; border-radius: 8px; }
-        #user-list { color: #23a559; font-size: 0.9rem; margin-bottom: 10px; overflow-y: auto; min-height: 50px; line-height: 1.4; }
+        .input-area { padding: 15px; background: var(--bg-main); display: flex; gap: 10px; align-items: center; border-top: 1px solid #1e1f22; }
+        input { background: #383a40; border: none; color: white; padding: 12px; border-radius: 6px; outline: none; }
+        button { background: var(--accent); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .btn-icon { background: #4e5058; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; width: 45px; height: 45px; border-radius: 6px; cursor: pointer; }
 
-        button { background: var(--discord-blue); color: white; border: none; padding: 10px; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 5px; }
-
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             body { flex-direction: column; }
-            .sidebar { width: 100%; height: auto; border-right: none; }
-            #user-list { display: flex; gap: 10px; flex-wrap: wrap; }
-            .voice-section { display: flex; gap: 5px; padding: 5px; }
+            .sidebar { width: 100%; order: 2; border-right: none; border-top: 1px solid #1e1f22; }
+            .main { height: 65vh; order: 1; }
         }
     </style>
 </head>
 <body>
     <div id="login-overlay">
         <div class="login-box">
-            <h2 style="color: white; margin-top: 0;">Mini Discord</h2>
-            <input type="text" id="nickname-input" placeholder="Wpisz swój nick..." style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 5px; border: none; box-sizing: border-box; background: #383a40; color: white;">
-            <button id="start-btn">Wejdź na serwer</button>
+            <h2 style="margin-top: 0;">Gildia</h2>
+            <input type="text" id="nick" placeholder="Nick (Maciek/Samuel/Kris)" style="width:100%; margin-bottom:10px;">
+            <input type="password" id="pass" placeholder="Hasło" style="width:100%; margin-bottom:10px;">
+            <button id="login-btn" style="width:100%;">Zaloguj</button>
         </div>
     </div>
 
     <div class="sidebar">
-        <h3 style="margin-top: 0;"># ogólny</h3>
-        <div id="user-list"><b>Online:</b><br></div>
-        <div id="my-id" style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 10px;"></div>
-        <div class="voice-section">
-            <button id="voice-btn">Połącz Głos</button>
-            <div id="active-controls" style="display: none; flex-direction: column; width: 100%;">
-                <button id="mute-btn" style="background: #4e5058;">Mute</button>
-                <button id="leave-btn" style="background: #da373c;">Rozłącz</button>
+        <div style="padding: 15px;">
+            <b style="font-size: 0.8rem; color: #949ba4;">ONLINE</b>
+            <div id="user-list" style="color: var(--success); margin-top: 8px; font-weight: bold;"></div>
+        </div>
+        <div class="voice-card">
+            <div id="v-status" style="font-size: 0.7rem; color: #949ba4; margin-bottom: 5px;">Głos: Rozłączony</div>
+            <div id="meter-container"><div id="meter-bar"></div></div>
+            <button id="voice-btn" style="width:100%">Połącz Głos</button>
+            <div id="active-controls" style="display: none; flex-direction: column; gap: 5px;">
+                <button id="mute-btn" style="background: #4e5058;">Wycisz</button>
+                <button id="leave-btn" style="background: var(--danger);">Rozłącz</button>
             </div>
         </div>
     </div>
 
     <div class="main">
         <div id="chat"></div>
-        <div class="input-box">
-            <label for="image-input" style="cursor: pointer; background: #4e5058; padding: 10px; border-radius: 5px; font-size: 1.2rem;">📷</label>
-            <input type="file" id="image-input" accept="image/*" style="display: none;">
-            <input type="text" id="msg-input" placeholder="Napisz wiadomość...">
+        <div class="input-area">
+            <label class="btn-icon">📷<input type="file" id="img-input" accept="image/*" style="display:none"></label>
+            <input type="text" id="msg-input" placeholder="Napisz wiadomość..." style="flex:1">
         </div>
     </div>
     <script src="/static/script.js"></script>
