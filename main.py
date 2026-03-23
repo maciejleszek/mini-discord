@@ -7,14 +7,6 @@ from fastapi.responses import FileResponse
 app = FastAPI()
 DB_PATH = "chat_history.db"
 
-# KONFIGURACJA DOSTĘPU - Zmień hasła na własne!
-USERS_DB = {
-    "Maciek": "komuch1",
-    "Samuel": "komuch2",
-    "Kris": "komuch3"
-}
-
-
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
