@@ -1,19 +1,19 @@
 import os
 import json
 import sqlite3
+from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 app = FastAPI()
-
-# Inicjalizacja bazy danych
 DB_PATH = "chat_history.db"
 
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    # Tworzymy tabelę z 5 kolumnami: id, user, text, time, msg_type
     c.execute('''CREATE TABLE IF NOT EXISTS messages
                  (
                      id
@@ -24,7 +24,13 @@ def init_db():
                      user
                      TEXT,
                      text
+                     TEXT,
+                     time
+                     TEXT,
+                     msg_type
                      TEXT
+                     DEFAULT
+                     'text'
                  )''')
     conn.commit()
     conn.close()
@@ -49,24 +55,31 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections[client_id] = websocket
 
-        # 1. Wyślij historię wiadomości z bazy
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT user, text FROM messages ORDER BY id ASC LIMIT 50")
-        history = [{"user": row[0], "text": row[1]} for row in c.fetchall()]
-        conn.close()
-        await websocket.send_text(json.dumps({"type": "history", "messages": history}))
+        # Pobieranie historii (tutaj wywalało błąd, bo brakowało kolumn)
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("SELECT user, text, time, msg_type FROM messages ORDER BY id ASC LIMIT 50")
+            rows = c.fetchall()
+            history = [{"user": r[0], "text": r[1], "time": r[2], "type": r[3]} for r in rows]
+            conn.close()
+            await websocket.send_text(json.dumps({"type": "history", "messages": history}))
+        except Exception as e:
+            print(f"Błąd bazy danych (pobieranie): {e}")
 
-        # 2. Wyślij listę osób online
-        users = list(self.active_connections.keys())
-        await self.broadcast(json.dumps({"type": "user-list", "users": users}), None)
+        await self.update_user_list()
 
     def disconnect(self, client_id: str):
         if client_id in self.active_connections:
             del self.active_connections[client_id]
 
-    async def broadcast(self, message: str, sender_id: str = None):
-        for cid, connection in self.active_connections.items():
+    async def update_user_list(self):
+        users = list(self.active_connections.keys())
+        msg = json.dumps({"type": "user-list", "users": users})
+        await self.broadcast(msg)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections.values():
             try:
                 await connection.send_text(message)
             except:
@@ -74,7 +87,10 @@ class ConnectionManager:
 
     async def send_to_target(self, target_id: str, message: str):
         if target_id in self.active_connections:
-            await self.active_connections[target_id].send_text(message)
+            try:
+                await self.active_connections[target_id].send_text(message)
+            except:
+                pass
 
 
 manager = ConnectionManager()
@@ -86,21 +102,25 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
     try:
         while True:
             data = await websocket.receive_text()
-            message = json.loads(data)
+            msg = json.loads(data)
 
-            if message.get("type") == "text":
-                # Zapisz do bazy danych
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute("INSERT INTO messages (user, text) VALUES (?, ?)", (message["user"], message["text"]))
-                conn.commit()
-                conn.close()
-                await manager.broadcast(json.dumps(message), client_id)
+            if msg.get("type") in ["text", "image"]:
+                msg["time"] = datetime.now().strftime("%H:%M")
 
-            elif "target" in message:  # Sygnalizacja WebRTC
-                await manager.send_to_target(message["target"], json.dumps(message))
+                try:
+                    conn = sqlite3.connect(DB_PATH)
+                    c = conn.cursor()
+                    c.execute("INSERT INTO messages (user, text, time, msg_type) VALUES (?, ?, ?, ?)",
+                              (msg["user"], msg["text"], msg["time"], msg["type"]))
+                    conn.commit()
+                    conn.close()
+                    await manager.broadcast(json.dumps(msg))
+                except Exception as e:
+                    print(f"Błąd zapisu: {e}")
+
+            elif "target" in msg:
+                await manager.send_to_target(msg["target"], json.dumps(msg))
 
     except WebSocketDisconnect:
         manager.disconnect(client_id)
-        users = list(manager.active_connections.keys())
-        await manager.broadcast(json.dumps({"type": "user-list", "users": users}))
+        await manager.update_user_list()

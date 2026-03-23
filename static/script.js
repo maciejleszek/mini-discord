@@ -1,178 +1,187 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Inicjalizacja i ID
-    const clientId = "User_" + Math.random().toString(36).substr(2, 4);
-    const myIdDisplay = document.getElementById('my-id');
-    if (myIdDisplay) myIdDisplay.innerText = "Twoje ID: " + clientId;
-
-    // 2. Połączenie WebSocket (obsługuje czat i sygnalizację WebRTC)
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/${clientId}`;
-    const ws = new WebSocket(wsUrl);
-
-    // 3. Elementy DOM
+    const loginOverlay = document.getElementById('login-overlay');
+    const nickInput = document.getElementById('nickname-input');
+    const startBtn = document.getElementById('start-btn');
     const chat = document.getElementById('chat');
     const msgInput = document.getElementById('msg-input');
+    const imageInput = document.getElementById('image-input');
     const userListDiv = document.getElementById('user-list');
     const voiceBtn = document.getElementById('voice-btn');
     const muteBtn = document.getElementById('mute-btn');
     const leaveBtn = document.getElementById('leave-btn');
     const activeControls = document.getElementById('active-controls');
+    const myIdDisplay = document.getElementById('my-id');
 
-    // 4. Konfiguracja WebRTC
-    const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    let clientId, ws, localStream, isMuted = false;
     const peers = {};
-    let localStream;
-    let isMuted = false;
+    const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-    // --- OBSŁUGA KOMUNIKACJI ---
-    ws.onmessage = async (event) => {
-        const data = JSON.parse(event.data);
-
-        switch(data.type) {
-            case 'history':
-                // Ładowanie starych wiadomości z bazy przy wejściu
-                chat.innerHTML = "";
-                data.messages.forEach(m => appendMessage(m.user, m.text));
-                break;
-
-            case 'user-list':
-                // Automatyczna aktualizacja listy osób bez odświeżania strony
-                userListDiv.innerHTML = "<b>Online:</b> " + data.users.join(', ');
-                break;
-
-            case 'text':
-                // Odbieranie nowej wiadomości (jeśli nie od nas)
-                if (data.user !== clientId) appendMessage(data.user, data.text);
-                break;
-
-            case 'user-joined':
-                console.log("Nowy użytkownik w kanale głosowym:", data.userId);
-                if (localStream) callUser(data.userId);
-                break;
-
-            case 'user-left':
-                // Sprzątanie po osobie, która wyszła
-                if (peers[data.userId]) {
-                    peers[data.userId].close();
-                    delete peers[data.userId];
-                    const audioEl = document.getElementById(`audio-${data.userId}`);
-                    if (audioEl) audioEl.remove();
-                }
-                break;
-
-            // Sygnalizacja WebRTC (Negocjacja połączenia)
-            default:
-                if (data.offer) {
-                    handleOffer(data.offer, data.from);
-                } else if (data.answer) {
-                    if (peers[data.from]) await peers[data.from].setRemoteDescription(new RTCSessionDescription(data.answer));
-                } else if (data.candidate) {
-                    if (peers[data.from]) await peers[data.from].addIceCandidate(new RTCIceCandidate(data.candidate));
-                }
-        }
+    startBtn.onclick = () => {
+        const val = nickInput.value.trim();
+        if (!val) return alert("Podaj nick!");
+        clientId = val;
+        loginOverlay.style.display = 'none';
+        myIdDisplay.innerText = "Zalogowany jako: " + clientId;
+        initApp();
     };
 
-    // --- FUNKCJE CZATU ---
-    msgInput.onkeypress = (e) => {
-        if (e.key === 'Enter' && msgInput.value.trim() !== "") {
-            const text = msgInput.value;
-            ws.send(JSON.stringify({ type: 'text', user: clientId, text: text }));
-            appendMessage("Ty", text); // Dodaj natychmiast u siebie
-            msgInput.value = "";
-        }
-    };
+    nickInput.onkeypress = (e) => { if (e.key === 'Enter') startBtn.click(); };
 
-    function appendMessage(user, text) {
+    function initApp() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${window.location.host}/ws/${encodeURIComponent(clientId)}`);
+
+        ws.onmessage = async (e) => {
+            const data = JSON.parse(e.data);
+            console.log("Odebrano sygnał:", data.type);
+
+            switch(data.type) {
+                case 'history':
+                    chat.innerHTML = "";
+                    data.messages.forEach(m => appendMessage(m.user, m.text, m.time, m.type));
+                    break;
+                case 'user-list':
+                    userListDiv.innerHTML = "<b>Online:</b><br>" + data.users.join('<br>');
+                    break;
+                case 'text':
+                case 'image':
+                    appendMessage(data.user, data.text, data.time, data.type);
+                    break;
+                case 'user-joined':
+                    if (localStream) callUser(data.userId);
+                    break;
+                case 'user-left':
+                    removePeer(data.userId);
+                    break;
+                default:
+                    handleSignaling(data);
+            }
+        };
+
+        msgInput.onkeypress = (e) => {
+            if (e.key === 'Enter' && msgInput.value.trim()) {
+                ws.send(JSON.stringify({
+                    type: 'text',
+                    user: clientId,
+                    text: msgInput.value
+                }));
+                msgInput.value = "";
+            }
+        };
+
+        imageInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                ws.send(JSON.stringify({
+                    type: 'image',
+                    user: clientId,
+                    text: ev.target.result
+                }));
+            };
+            reader.readAsDataURL(file);
+            e.target.value = "";
+        };
+
+        setupVoice();
+    }
+
+    function appendMessage(user, content, time, type) {
         const div = document.createElement('div');
         div.className = 'msg';
-        div.innerHTML = `<b>${user}:</b> ${text}`;
+        const color = (user === clientId) ? '#00aff4' : '#5865f2';
+
+        let body = "";
+        if (type === 'image') {
+            body = `<img src="${content}" class="chat-img" onclick="window.open(this.src)">`;
+        } else {
+            body = `<span>${content}</span>`;
+        }
+
+        div.innerHTML = `
+            <b style="color:${color}">${user} <span class="msg-time">${time || ''}</span></b><br>
+            ${body}
+        `;
         chat.appendChild(div);
-        chat.scrollTop = chat.scrollHeight; // Auto-scroll
+        chat.scrollTop = chat.scrollHeight;
     }
 
-    // --- KONTROLA GŁOSU ---
-    voiceBtn.onclick = async () => {
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            voiceBtn.style.display = 'none';
-            activeControls.style.display = 'flex';
+    function setupVoice() {
+        voiceBtn.onclick = async () => {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                voiceBtn.style.display = 'none';
+                activeControls.style.display = 'flex';
+                ws.send(JSON.stringify({ type: 'user-joined', userId: clientId }));
+            } catch { alert("Brak dostępu do mikrofonu!"); }
+        };
 
-            // Poinformuj innych, że dołączyłeś do rozmowy
-            ws.send(JSON.stringify({ type: 'user-joined', userId: clientId }));
-        } catch (err) {
-            console.error(err);
-            alert("Błąd mikrofonu. Safari wymaga HTTPS lub localhost.");
+        muteBtn.onclick = () => {
+            isMuted = !isMuted;
+            localStream.getAudioTracks()[0].enabled = !isMuted;
+            muteBtn.innerText = isMuted ? "Unmute" : "Mute";
+        };
+
+        leaveBtn.onclick = () => {
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localStream = null;
+            }
+            Object.keys(peers).forEach(id => removePeer(id));
+            activeControls.style.display = 'none';
+            voiceBtn.style.display = 'block';
+            ws.send(JSON.stringify({ type: 'user-left', userId: clientId }));
+        };
+    }
+
+    function removePeer(id) {
+        if(peers[id]) peers[id].close();
+        delete peers[id];
+        const a = document.getElementById(`audio-${id}`);
+        if(a) a.remove();
+    }
+
+    function handleSignaling(data) {
+        if (data.offer) handleOffer(data.offer, data.from);
+        else if (data.answer && peers[data.from]) {
+            peers[data.from].setRemoteDescription(new RTCSessionDescription(data.answer));
+        } else if (data.candidate && peers[data.from]) {
+            peers[data.from].addIceCandidate(new RTCIceCandidate(data.candidate));
         }
-    };
-
-    muteBtn.onclick = () => {
-        isMuted = !isMuted;
-        localStream.getAudioTracks()[0].enabled = !isMuted;
-        muteBtn.innerText = isMuted ? "Włącz Mikrofon" : "Wycisz Mikrofon";
-        muteBtn.style.background = isMuted ? "#23a559" : "#4e5058";
-    };
-
-    leaveBtn.onclick = () => {
-        // Wyłącz sprzętowo mikrofon
-        localStream.getTracks().forEach(track => track.stop());
-        localStream = null;
-
-        // Zamknij połączenia ze wszystkimi
-        Object.keys(peers).forEach(id => {
-            peers[id].close();
-            delete peers[id];
-            const audio = document.getElementById(`audio-${id}`);
-            if (audio) audio.remove();
-        });
-
-        activeControls.style.display = 'none';
-        voiceBtn.style.display = 'block';
-
-        // Poinformuj serwer o wyjściu z głosu
-        ws.send(JSON.stringify({ type: 'user-left', userId: clientId }));
-    };
-
-    // --- LOGIKA WebRTC ---
-    async function callUser(targetId) {
-        const pc = createPeerConnection(targetId);
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        ws.send(JSON.stringify({ offer, target: targetId, from: clientId }));
     }
 
-    async function handleOffer(offer, fromId) {
-        const pc = createPeerConnection(fromId);
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ answer, target: fromId, from: clientId }));
-    }
-
-    function createPeerConnection(targetId) {
+    function createPC(id) {
         const pc = new RTCPeerConnection(iceConfig);
-        peers[targetId] = pc;
-
-        if (localStream) {
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-        }
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                ws.send(JSON.stringify({ candidate: event.candidate, target: targetId, from: clientId }));
-            }
+        peers[id] = pc;
+        if (localStream) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+        pc.onicecandidate = (e) => {
+            if (e.candidate) ws.send(JSON.stringify({ candidate: e.candidate, target: id, from: clientId }));
         };
-
-        pc.ontrack = (event) => {
-            let audio = document.getElementById(`audio-${targetId}`);
-            if (!audio) {
-                audio = document.createElement('audio');
-                audio.id = `audio-${targetId}`;
-                audio.autoplay = true;
-                document.body.appendChild(audio);
+        pc.ontrack = (e) => {
+            let a = document.getElementById(`audio-${id}`);
+            if(!a) {
+                a = document.createElement('audio');
+                a.id = `audio-${id}`; a.autoplay = true;
+                document.body.appendChild(a);
             }
-            audio.srcObject = event.streams[0];
+            a.srcObject = e.streams[0];
         };
-
         return pc;
+    }
+
+    async function callUser(id) {
+        const pc = createPC(id);
+        const o = await pc.createOffer();
+        await pc.setLocalDescription(o);
+        ws.send(JSON.stringify({ offer: o, target: id, from: clientId }));
+    }
+
+    async function handleOffer(o, id) {
+        const pc = createPC(id);
+        await pc.setRemoteDescription(new RTCSessionDescription(o));
+        const a = await pc.createAnswer();
+        await pc.setLocalDescription(a);
+        ws.send(JSON.stringify({ answer: a, target: id, from: clientId }));
     }
 });
