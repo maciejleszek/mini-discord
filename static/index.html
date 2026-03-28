@@ -3,127 +3,329 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3kipa</title>
+    <title>Gildia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-dark: #1e1f22;
-            --bg-main: #313338;
-            --bg-side: #2b2d31;
+            --bg-0: #111214;
+            --bg-1: #1a1c1f;
+            --bg-2: #222428;
+            --bg-3: #2c2f33;
             --accent: #5865f2;
-            --success: #23a559;
-            --danger: #da373c;
-            --text: #dbdee1;
+            --accent-dim: #3b43b5;
+            --success: #2dc76d;
+            --danger: #ed4245;
+            --text: #e3e5e8;
+            --text-muted: #72767d;
+            --border: rgba(255,255,255,0.06);
+            --radius: 14px;
+            --radius-sm: 8px;
         }
 
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
 
         body {
-            background: var(--bg-dark);
+            background: var(--bg-0);
             color: var(--text);
-            font-family: sans-serif;
-            margin: 0;
-            display: flex;
+            font-family: 'DM Sans', sans-serif;
             height: 100dvh;
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
         }
 
-        /* ── LOGIN ── */
+        /* ══════════════════════════
+           LOGIN
+        ══════════════════════════ */
         #login-overlay {
             position: fixed;
             inset: 0;
-            background: var(--bg-dark);
-            z-index: 1000;
+            z-index: 100;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 24px;
+            background: var(--bg-0);
         }
 
-        .login-box {
-            background: var(--bg-main);
-            padding: 30px;
-            border-radius: 12px;
-            width: 100%;
-            max-width: 350px;
-            text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        #login-overlay::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(var(--border) 1px, transparent 1px),
+                linear-gradient(90deg, var(--border) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
         }
 
-        .login-box h2 { margin-top: 0; color: white; }
-
-        .login-box input {
+        .login-card {
+            background: var(--bg-1);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 36px 28px 28px;
             width: 100%;
-            margin-bottom: 10px;
+            max-width: 360px;
+            position: relative;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+            animation: slideUp 0.35s cubic-bezier(.22,.9,.36,1) both;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .login-logo {
+            font-family: 'Syne', sans-serif;
+            font-weight: 800;
+            font-size: 2rem;
+            letter-spacing: -0.03em;
+            margin-bottom: 4px;
+            color: white;
+        }
+
+        .login-logo span { color: var(--accent); }
+
+        .login-sub {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin-bottom: 28px;
+        }
+
+        .field-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            margin-bottom: 6px;
             display: block;
         }
 
-        .login-box button { width: 100%; }
+        .login-card input[type="text"],
+        .login-card input[type="password"] {
+            width: 100%;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 13px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 0.95rem;
+            font-family: 'DM Sans', sans-serif;
+            outline: none;
+            transition: border-color 0.2s;
+            margin-bottom: 16px;
+            -webkit-appearance: none;
+            display: block;
+        }
+
+        .login-card input:focus { border-color: var(--accent); }
+        .login-card input::placeholder { color: var(--text-muted); }
+
+        #login-btn {
+            width: 100%;
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: var(--radius-sm);
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            -webkit-appearance: none;
+            margin-top: 4px;
+            display: block;
+        }
+
+        #login-btn:hover { background: #6874f5; }
+        #login-btn:active { transform: scale(0.98); background: var(--accent-dim); }
+
+        /* ══════════════════════════
+           APP LAYOUT
+        ══════════════════════════ */
+        #app {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            height: 100dvh;
+        }
 
         /* ── SIDEBAR ── */
         .sidebar {
-            width: 220px;
-            background: var(--bg-side);
+            width: 210px;
+            flex-shrink: 0;
+            background: var(--bg-1);
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            border-right: 1px solid var(--bg-dark);
+        }
+
+        .sidebar-logo {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            font-size: 1.05rem;
+            letter-spacing: -0.02em;
+            color: white;
+            padding: 15px 14px 13px;
+            border-bottom: 1px solid var(--border);
             flex-shrink: 0;
         }
 
-        .sidebar-section { padding: 12px 15px; }
-        .sidebar-label { font-size: 0.72rem; color: #949ba4; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+        .sidebar-logo span { color: var(--accent); }
 
-        /* ── VOICE CARD ── */
-        .voice-card {
-            background: #232428;
-            margin: 0 10px 10px;
-            padding: 12px;
-            border-radius: 10px;
+        .section-title {
+            font-size: 0.67rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.09em;
+            padding: 14px 14px 6px;
         }
 
-        #v-status { font-size: 0.72rem; color: #949ba4; margin-bottom: 8px; }
+        #user-list {
+            padding: 0 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+        }
+
+        .user-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            border-radius: 6px;
+            font-size: 0.87rem;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .user-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            flex-shrink: 0;
+            box-shadow: 0 0 5px var(--success);
+        }
+
+        /* ── VOICE PANEL ── */
+        .voice-panel {
+            margin: 0 8px 10px;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 11px;
+            flex-shrink: 0;
+        }
+
+        .voice-status-row {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-bottom: 9px;
+        }
+
+        .voice-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: background 0.3s, box-shadow 0.3s;
+            flex-shrink: 0;
+        }
+
+        .voice-dot.live {
+            background: var(--success);
+            box-shadow: 0 0 6px var(--success);
+        }
+
+        #v-status {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
 
         #meter-container {
-            width: 100%;
-            height: 8px;
-            background: #111;
-            border-radius: 4px;
-            margin-bottom: 10px;
-            display: none;
+            height: 3px;
+            background: var(--bg-0);
+            border-radius: 2px;
             overflow: hidden;
-            border: 1px solid #444;
+            margin-bottom: 9px;
+            display: none;
         }
 
         #meter-bar {
-            width: 0%;
             height: 100%;
+            width: 0%;
             background: var(--success);
             transition: width 0.05s;
-            border-radius: 4px;
+            border-radius: 2px;
+        }
+
+        #voice-btn {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 9px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
+            width: 100%;
+            transition: filter 0.15s;
         }
 
         #active-controls {
             display: none;
             flex-direction: column;
-            gap: 6px;
+            gap: 5px;
         }
+
+        #mute-btn, #leave-btn {
+            border: none;
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
+            width: 100%;
+            color: white;
+            transition: filter 0.15s;
+        }
+
+        #mute-btn { background: var(--bg-3); }
+        #leave-btn { background: var(--danger); }
+        #voice-btn:active, #mute-btn:active, #leave-btn:active { filter: brightness(0.85); }
 
         /* ── MAIN CHAT ── */
         .main {
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: var(--bg-main);
             min-width: 0;
+            background: var(--bg-1);
         }
 
         .chat-header {
-            padding: 12px 15px;
-            border-bottom: 1px solid var(--bg-dark);
-            font-weight: bold;
-            font-size: 0.95rem;
+            padding: 13px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--text);
+            flex-shrink: 0;
             display: flex;
             align-items: center;
             gap: 6px;
+        }
+
+        .chat-header-hash {
+            color: var(--text-muted);
+            font-size: 1rem;
         }
 
         #chat {
@@ -132,130 +334,219 @@
             padding: 12px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 5px;
         }
 
-        /* Scrollbar */
-        #chat::-webkit-scrollbar { width: 6px; }
+        #chat::-webkit-scrollbar { width: 4px; }
         #chat::-webkit-scrollbar-track { background: transparent; }
-        #chat::-webkit-scrollbar-thumb { background: #4e5058; border-radius: 3px; }
+        #chat::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 2px; }
 
         .msg {
-            background: #383a40;
-            padding: 9px 13px;
-            border-radius: 10px;
-            max-width: 85%;
+            background: var(--bg-2);
+            padding: 9px 12px;
+            border-radius: 12px;
+            border-bottom-left-radius: 4px;
+            max-width: 84%;
             align-self: flex-start;
             word-wrap: break-word;
             word-break: break-word;
-            animation: fadeIn 0.15s ease;
+            border: 1px solid var(--border);
+            animation: msgIn 0.16s ease both;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(4px); }
-            to   { opacity: 1; transform: translateY(0); }
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(5px) scale(0.98); }
+            to   { opacity: 1; transform: none; }
         }
 
-        .msg b {
+        .msg-author {
+            font-size: 0.74rem;
+            font-weight: 600;
             color: var(--accent);
-            font-size: 0.82rem;
-            display: block;
             margin-bottom: 3px;
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+
+        .msg-time {
+            font-size: 0.63rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .msg-text {
+            font-size: 0.9rem;
+            line-height: 1.45;
+            color: var(--text);
         }
 
         .msg img {
             max-width: 100%;
-            max-height: 300px;
+            max-height: 260px;
             border-radius: 8px;
-            margin-top: 6px;
+            margin-top: 7px;
             display: block;
-            border: 1px solid #4e5058;
+            border: 1px solid var(--border);
         }
 
-        .msg-time {
-            color: #949ba4;
-            font-size: 0.68rem;
-            font-weight: normal;
-            margin-left: 6px;
+        .msg-system {
+            align-self: center;
+            background: transparent;
+            border: none;
+            padding: 2px 0;
+            font-size: 0.73rem;
+            color: var(--text-muted);
+            font-style: italic;
         }
 
         /* ── INPUT AREA ── */
         .input-area {
             padding: 10px 12px;
-            background: var(--bg-main);
+            border-top: 1px solid var(--border);
             display: flex;
-            gap: 8px;
+            gap: 7px;
             align-items: center;
-            border-top: 1px solid var(--bg-dark);
+            background: var(--bg-1);
+            flex-shrink: 0;
         }
 
-        input[type="text"],
-        input[type="password"] {
-            background: #383a40;
-            border: none;
-            color: white;
-            padding: 11px 12px;
-            border-radius: 6px;
-            outline: none;
-            font-size: 0.95rem;
-        }
-
-        input[type="text"]::placeholder,
-        input[type="password"]::placeholder { color: #72767d; }
-
-        button {
-            background: var(--accent);
-            color: white;
-            border: none;
-            padding: 11px 14px;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: filter 0.15s;
-        }
-
-        button:hover { filter: brightness(1.1); }
-        button:active { filter: brightness(0.9); }
-
-        .btn-icon {
-            background: #4e5058;
-            font-size: 1.1rem;
+        .img-label {
+            width: 42px;
+            height: 42px;
+            background: var(--bg-3);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 42px;
-            height: 42px;
-            border-radius: 6px;
+            font-size: 1.05rem;
             cursor: pointer;
             flex-shrink: 0;
             transition: background 0.15s;
         }
 
-        .btn-icon:hover { background: #5c5f66; }
+        .img-label:active { background: var(--bg-2); }
 
-        /* ── MOBILE ── */
-        @media (max-width: 640px) {
-            body { flex-direction: column; }
+        #msg-input {
+            flex: 1;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 11px 13px;
+            border-radius: var(--radius-sm);
+            font-size: 0.92rem;
+            font-family: 'DM Sans', sans-serif;
+            outline: none;
+            transition: border-color 0.2s;
+            -webkit-appearance: none;
+            min-width: 0;
+        }
 
+        #msg-input:focus { border-color: rgba(88,101,242,0.4); }
+        #msg-input::placeholder { color: var(--text-muted); }
+
+        #send-btn {
+            width: 42px;
+            height: 42px;
+            background: var(--accent);
+            border: none;
+            border-radius: var(--radius-sm);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: background 0.15s, transform 0.1s;
+            padding: 0;
+        }
+
+        #send-btn:active { background: var(--accent-dim); transform: scale(0.92); }
+
+        /* ══════════════════════════
+           MOBILE
+        ══════════════════════════ */
+        @media (max-width: 600px) {
+            #app { flex-direction: column; }
+
+            /* Sidebar becomes a bottom bar */
             .sidebar {
                 width: 100%;
-                order: 2;
+                flex-direction: row;
                 border-right: none;
-                border-top: 1px solid var(--bg-dark);
+                border-top: 1px solid var(--border);
+                order: 3;
+                height: auto;
+                padding: 7px 8px;
+                gap: 8px;
+                align-items: center;
+                overflow-x: auto;
+                overflow-y: hidden;
+                -webkit-overflow-scrolling: touch;
+                flex-shrink: 0;
+            }
+
+            /* hide decorative elements on mobile */
+            .sidebar-logo { display: none; }
+            .section-title { display: none; }
+
+            /* users as chips */
+            #user-list {
+                flex-direction: row;
+                flex: 0 0 auto;
+                gap: 5px;
+                padding: 0;
+            }
+
+            .user-pill {
+                padding: 5px 10px;
+                background: var(--bg-2);
+                border: 1px solid var(--border);
+                border-radius: 20px;
+                white-space: nowrap;
+                font-size: 0.82rem;
+            }
+
+            /* voice panel compact row */
+            .voice-panel {
+                margin: 0;
+                flex: 1;
+                min-width: 155px;
+                padding: 7px 10px;
+                display: flex;
                 flex-direction: row;
                 align-items: center;
-                padding: 6px 10px;
-                gap: 10px;
+                gap: 8px;
+                border-radius: 8px;
             }
 
-            .sidebar-section { padding: 4px 0; }
-            .voice-card { margin: 0; flex: 1; }
+            .voice-status-row { margin-bottom: 0; flex-shrink: 0; }
+            #meter-container { display: none !important; }
 
-            .main {
-                order: 1;
+            #voice-btn {
+                padding: 7px 10px;
+                font-size: 0.77rem;
+                white-space: nowrap;
                 flex: 1;
             }
+
+            #active-controls {
+                flex-direction: row;
+                flex: 1;
+                gap: 5px;
+            }
+
+            #mute-btn, #leave-btn {
+                padding: 7px 8px;
+                font-size: 0.77rem;
+                white-space: nowrap;
+            }
+
+            .main { order: 1; flex: 1; min-height: 0; }
+            #chat { padding: 8px 10px; }
+            .msg { max-width: 90%; }
+            .chat-header { padding: 10px 13px; }
         }
     </style>
 </head>
@@ -263,48 +554,80 @@
 
     <!-- LOGIN -->
     <div id="login-overlay">
-        <div class="login-box">
-            <h2>3kipa tego typu</h2>
-            <input type="text" id="nick" placeholder="Nick (Maciek / Samuel / Kris)">
-            <input type="password" id="pass" placeholder="Hasło">
-            <button id="login-btn">Zaloguj się</button>
+        <div class="login-card">
+            <div class="login-logo">Gil<span>dia</span></div>
+            <div class="login-sub">Prywatny kanał dla znajomych ⚔️</div>
+
+            <label class="field-label" for="nick">Nick</label>
+            <input type="text"
+                   id="nick"
+                   placeholder="Maciek / Samuel / Kris"
+                   autocomplete="username"
+                   autocapitalize="none"
+                   autocorrect="off"
+                   spellcheck="false">
+
+            <label class="field-label" for="pass">Hasło</label>
+            <input type="password"
+                   id="pass"
+                   placeholder="••••••••"
+                   autocomplete="current-password">
+
+            <button type="button" id="login-btn">Zaloguj się →</button>
         </div>
     </div>
 
-    <!-- SIDEBAR -->
-    <div class="sidebar">
-        <div class="sidebar-section">
-            <div class="sidebar-label">Online</div>
-            <div id="user-list" style="color: var(--success); font-weight: bold; font-size: 0.9rem; line-height: 1.6;"></div>
-        </div>
+    <!-- APP -->
+    <div id="app">
 
-        <div class="voice-card">
-            <div id="v-status">Głos: Rozłączony</div>
-            <div id="meter-container"><div id="meter-bar"></div></div>
-            <button id="voice-btn" style="width:100%; margin-bottom: 0;">🎙️ Połącz Głos</button>
-            <div id="active-controls">
-                <button id="mute-btn" style="background: #4e5058;">Wycisz 🔇</button>
-                <button id="leave-btn" style="background: var(--danger);">Rozłącz</button>
+        <!-- MAIN -->
+        <div class="main">
+            <div class="chat-header">
+                <span class="chat-header-hash">#</span> ogólny
+            </div>
+            <div id="chat"></div>
+            <div class="input-area">
+                <label class="img-label" title="Wyślij zdjęcie">
+                    📷
+                    <input type="file" id="img-input" accept="image/*" style="display:none">
+                </label>
+                <input type="text"
+                       id="msg-input"
+                       placeholder="Napisz wiadomość…"
+                       autocomplete="off"
+                       autocorrect="off">
+                <button type="button" id="send-btn" title="Wyślij">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2.5"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"/>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    </svg>
+                </button>
             </div>
         </div>
-    </div>
 
-    <!-- MAIN -->
-    <div class="main">
-        <div class="chat-header">
-            💬 #ogólny
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+            <div class="sidebar-logo">Gil<span>dia</span></div>
+
+            <div class="section-title">Online</div>
+            <div id="user-list"></div>
+
+            <div class="voice-panel">
+                <div class="voice-status-row">
+                    <div class="voice-dot" id="voice-dot"></div>
+                    <span id="v-status">Rozłączony</span>
+                </div>
+                <div id="meter-container"><div id="meter-bar"></div></div>
+                <button type="button" id="voice-btn">🎙 Połącz głos</button>
+                <div id="active-controls">
+                    <button type="button" id="mute-btn">Wycisz</button>
+                    <button type="button" id="leave-btn">Rozłącz</button>
+                </div>
+            </div>
         </div>
 
-        <div id="chat"></div>
-
-        <div class="input-area">
-            <label class="btn-icon" title="Wyślij zdjęcie">
-                📷
-                <input type="file" id="img-input" accept="image/*" style="display:none">
-            </label>
-            <input type="text" id="msg-input" placeholder="Napisz wiadomość..." style="flex:1">
-            <button id="send-btn" title="Wyślij">➤</button>
-        </div>
     </div>
 
     <script src="/static/script.js"></script>
