@@ -7,43 +7,30 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
-# Wczytujemy zmienne z pliku .env (jeśli plik istnieje)
 load_dotenv()
 
 app = FastAPI()
 DB_PATH = "chat_history.db"
 
-# KONFIGURACJA DOSTĘPU - pobieramy z .env zamiast wpisywać ręcznie
-# Jeśli w .env nie będzie hasła, domyślnie wstawi None
 USERS_DB = {
     "Maciek": os.getenv("PASS_MACIEK"),
     "Samuel": os.getenv("PASS_SAMUEL"),
     "Kris": os.getenv("PASS_KRIS")
 }
 
+# Zbiór użytkowników aktualnie połączonych głosowo
+voice_users: set[str] = set()
+
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Tabela obsługuje teraz typ wiadomości (text/image)
     c.execute('''CREATE TABLE IF NOT EXISTS messages
-                 (
-                     id
-                     INTEGER
-                     PRIMARY
-                     KEY
-                     AUTOINCREMENT,
-                     user
-                     TEXT,
-                     text
-                     TEXT,
-                     time
-                     TEXT,
-                     msg_type
-                     TEXT
-                     DEFAULT
-                     'text'
-                 )''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user TEXT,
+                  text TEXT,
+                  time TEXT,
+                  msg_type TEXT DEFAULT 'text')''')
     conn.commit()
     conn.close()
 
@@ -67,11 +54,11 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections[client_id] = websocket
 
-        # Pobieranie historii (max 50 ostatnich wiadomości)
+        # Historia (max 50 ostatnich wiadomości)
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("SELECT user, text, time, msg_type FROM messages ORDER BY id ASC LIMIT 50")
-        history = [{"user": r[0], "text": r[1], "time": r[2], "type": r[3]} for r in c.fetchall()]
+        c.execute("SELECT user, text, time, msg_type FROM messages ORDER BY id DESC LIMIT 50")
+        history = [{"user": r[0], "text": r[1], "time": r[2], "type": r[3]} for r in reversed(c.fetchall())]
         conn.close()
 
         await websocket.send_text(json.dumps({"type": "history", "messages": history}))
@@ -105,10 +92,8 @@ manager = ConnectionManager()
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str, pwd: str = Query(None)):
-    # Pobieramy hasło przypisane do danego nicku z naszego słownika USERS_DB
     stored_password = USERS_DB.get(client_id)
 
-    # Weryfikacja: nick musi być na liście, a hasło musi się zgadzać
     if not stored_password or stored_password != pwd:
         await websocket.accept()
         await websocket.send_text(json.dumps({"type": "error", "msg": "Błędne hasło lub nick!"}))
@@ -130,8 +115,35 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str, pwd: str = Qu
                 conn.commit()
                 conn.close()
                 await manager.broadcast(json.dumps(msg))
+
+            elif msg.get("type") == "user-joined-voice":
+                # Dodaj użytkownika do zbioru głosowych
+                voice_users.add(client_id)
+                # Powiedz nowemu użytkownikowi, kto już jest w kanale głosowym
+                # (żeby tylko ON inicjował połączenia do istniejących)
+                existing = [uid for uid in voice_users if uid != client_id]
+                await manager.send_to_target(
+                    client_id,
+                    json.dumps({"type": "voice-peers", "peers": existing})
+                )
+                # Powiedz pozostałym, że nowy użytkownik dołączył
+                for uid in existing:
+                    await manager.send_to_target(
+                        uid,
+                        json.dumps({"type": "user-joined", "userId": client_id})
+                    )
+
+            elif msg.get("type") == "user-left-voice":
+                voice_users.discard(client_id)
+                # Powiedz wszystkim że użytkownik opuścił głos
+                await manager.broadcast(json.dumps({"type": "user-left", "userId": client_id}))
+
             elif "target" in msg:
+                # Sygnalizacja WebRTC (offer/answer/candidate)
                 await manager.send_to_target(msg["target"], json.dumps(msg))
+
     except WebSocketDisconnect:
+        voice_users.discard(client_id)
         manager.disconnect(client_id)
+        await manager.broadcast(json.dumps({"type": "user-left", "userId": client_id}))
         await manager.update_user_list()
