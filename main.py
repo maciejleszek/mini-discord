@@ -18,7 +18,6 @@ USERS_DB = {
     "Kris": os.getenv("PASS_KRIS")
 }
 
-# Zbiór użytkowników aktualnie połączonych głosowo
 voice_users: set[str] = set()
 
 
@@ -52,16 +51,19 @@ class ConnectionManager:
 
     async def connect(self, client_id: str, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections[client_id] = websocket
 
-        # Historia (max 50 ostatnich wiadomości)
+        # 1. Wyślij historię TYLKO nowemu użytkownikowi (przed dodaniem do listy)
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("SELECT user, text, time, msg_type FROM messages ORDER BY id DESC LIMIT 50")
         history = [{"user": r[0], "text": r[1], "time": r[2], "type": r[3]} for r in reversed(c.fetchall())]
         conn.close()
-
         await websocket.send_text(json.dumps({"type": "history", "messages": history}))
+
+        # 2. Dodaj do aktywnych połączeń
+        self.active_connections[client_id] = websocket
+
+        # 3. Teraz broadcast zaktualizowanej listy do WSZYSTKICH (włącznie z nowym)
         await self.update_user_list()
 
     def disconnect(self, client_id: str):
@@ -73,17 +75,18 @@ class ConnectionManager:
         await self.broadcast(json.dumps({"type": "user-list", "users": users}))
 
     async def broadcast(self, message: str):
-        for connection in self.active_connections.values():
+        # Iterujemy po kopii żeby uniknąć błędów gdy ktoś się rozłączy w trakcie
+        for connection in list(self.active_connections.values()):
             try:
                 await connection.send_text(message)
-            except:
+            except Exception:
                 pass
 
     async def send_to_target(self, target_id: str, message: str):
         if target_id in self.active_connections:
             try:
                 await self.active_connections[target_id].send_text(message)
-            except:
+            except Exception:
                 pass
 
 
@@ -114,19 +117,16 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str, pwd: str = Qu
                           (msg["user"], msg["text"], msg["time"], msg.get("type", "text")))
                 conn.commit()
                 conn.close()
+                # Broadcast do wszystkich — włącznie z nadawcą
                 await manager.broadcast(json.dumps(msg))
 
             elif msg.get("type") == "user-joined-voice":
-                # Dodaj użytkownika do zbioru głosowych
                 voice_users.add(client_id)
-                # Powiedz nowemu użytkownikowi, kto już jest w kanale głosowym
-                # (żeby tylko ON inicjował połączenia do istniejących)
                 existing = [uid for uid in voice_users if uid != client_id]
                 await manager.send_to_target(
                     client_id,
                     json.dumps({"type": "voice-peers", "peers": existing})
                 )
-                # Powiedz pozostałym, że nowy użytkownik dołączył
                 for uid in existing:
                     await manager.send_to_target(
                         uid,
@@ -135,15 +135,13 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str, pwd: str = Qu
 
             elif msg.get("type") == "user-left-voice":
                 voice_users.discard(client_id)
-                # Powiedz wszystkim że użytkownik opuścił głos
                 await manager.broadcast(json.dumps({"type": "user-left", "userId": client_id}))
 
             elif "target" in msg:
-                # Sygnalizacja WebRTC (offer/answer/candidate)
                 await manager.send_to_target(msg["target"], json.dumps(msg))
 
     except WebSocketDisconnect:
         voice_users.discard(client_id)
         manager.disconnect(client_id)
-        await manager.broadcast(json.dumps({"type": "user-left", "userId": client_id}))
+        # Powiedz wszystkim że użytkownik wyszedł i zaktualizuj listę
         await manager.update_user_list()
