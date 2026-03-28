@@ -126,7 +126,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str, pwd: str = Query(None)):
     stored_password = USERS_DB.get(client_id)
@@ -142,6 +141,10 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str, pwd: str = Qu
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
+
+            # --- NOWE: Obsługa pingów ---
+            if msg.get("type") == "ping":
+                continue
 
             if msg.get("type") in ["text", "image"]:
                 msg["time"] = datetime.now().strftime("%H:%M")

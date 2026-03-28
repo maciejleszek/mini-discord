@@ -24,34 +24,43 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
     document.getElementById('nick').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('pass').focus(); });
 
-    // ── App init ──────────────────────────────────────────────────
     function initApp() {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(`${protocol}//${window.location.host}/ws/${encodeURIComponent(clientId)}?pwd=${encodeURIComponent(password)}`);
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${encodeURIComponent(clientId)}?pwd=${encodeURIComponent(password)}`);
 
-        ws.onopen = () => console.log('WS połączony');
+            ws.onopen = () => {
+                console.log('WS połączony');
+                // --- NOWE: Heartbeat (Ping) ---
+                setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'ping' }));
+                    }
+                }, 20000);
+            };
 
-        ws.onmessage = async (e) => {
-            const data = JSON.parse(e.data);
+            ws.onmessage = async (e) => {
+                let data;
+                try {
+                    data = JSON.parse(e.data);
+                } catch (err) { return; }
 
-            if (data.type === 'error') {
-                alert(data.msg);
-                location.reload();
-                return;
-            }
+                if (data.type === 'error') {
+                    alert(data.msg);
+                    location.reload();
+                    return;
+                }
 
-            document.getElementById('login-overlay').style.display = 'none';
+                const overlay = document.getElementById('login-overlay');
+                if (overlay) overlay.style.display = 'none';
 
-            switch (data.type) {
-                case 'history':
-                    data.messages.forEach(m => appendMessage(m.user, m.text, m.time, m.type));
-                    break;
-
-                // Serwer przesyła kredencjale TURN — zapisujemy globalnie
-                case 'ice-config':
-                    iceConfig = data.config;
-                    console.log('✅ ICE config załadowany z serwera');
-                    break;
+                switch (data.type) {
+                    case 'ice-config':
+                        // --- NAPRAWA: Bezpieczne przypisanie ---
+                        if (data.config && data.config.iceServers) {
+                            iceConfig = data.config;
+                            console.log('✅ ICE config załadowany');
+                        }
+                        break;
 
                 case 'user-list':
                     renderUserList(data.users);
