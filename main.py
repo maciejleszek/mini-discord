@@ -1,6 +1,7 @@
 import os
 import json
 import sqlite3
+import httpx
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +18,10 @@ USERS_DB = {
     "Samuel": os.getenv("PASS_SAMUEL"),
     "Kris": os.getenv("PASS_KRIS")
 }
+
+# Cloudflare TURN — ustaw te zmienne w Render.com → Environment
+TURN_TOKEN_ID = os.getenv("TURN_TOKEN_ID")
+TURN_API_TOKEN = os.getenv("TURN_API_TOKEN")
 
 voice_users: set[str] = set()
 
@@ -37,6 +42,34 @@ def init_db():
 init_db()
 
 
+async def get_turn_credentials() -> dict:
+    """Pobiera krótkotrwałe kredencjale TURN z Cloudflare."""
+    if not TURN_TOKEN_ID or not TURN_API_TOKEN:
+        # Fallback na publiczny STUN jeśli brak konfiguracji
+        return {
+            "iceServers": [
+                {"urls": "stun:stun.l.google.com:19302"}
+            ]
+        }
+    try:
+        url = f"https://rtc.live.cloudflare.com/v1/turn/keys/{TURN_TOKEN_ID}/credentials/generate"
+        headers = {
+            "Authorization": f"Bearer {TURN_API_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=headers, json={"ttl": 86400})
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        print(f"Błąd pobierania TURN credentials: {e}")
+        return {
+            "iceServers": [
+                {"urls": "stun:stun.l.google.com:19302"}
+            ]
+        }
+
+
 @app.get("/")
 async def get_index():
     return FileResponse(os.path.join("static", "index.html"))
@@ -52,7 +85,7 @@ class ConnectionManager:
     async def connect(self, client_id: str, websocket: WebSocket):
         await websocket.accept()
 
-        # 1. Wyślij historię TYLKO nowemu użytkownikowi (przed dodaniem do listy)
+        # 1. Historia dla nowego użytkownika
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("SELECT user, text, time, msg_type FROM messages ORDER BY id DESC LIMIT 50")
@@ -60,10 +93,12 @@ class ConnectionManager:
         conn.close()
         await websocket.send_text(json.dumps({"type": "history", "messages": history}))
 
-        # 2. Dodaj do aktywnych połączeń
-        self.active_connections[client_id] = websocket
+        # 2. Wyślij kredencjale TURN
+        ice_config = await get_turn_credentials()
+        await websocket.send_text(json.dumps({"type": "ice-config", "config": ice_config}))
 
-        # 3. Teraz broadcast zaktualizowanej listy do WSZYSTKICH (włącznie z nowym)
+        # 3. Dodaj do aktywnych i zaktualizuj listę
+        self.active_connections[client_id] = websocket
         await self.update_user_list()
 
     def disconnect(self, client_id: str):
@@ -75,7 +110,6 @@ class ConnectionManager:
         await self.broadcast(json.dumps({"type": "user-list", "users": users}))
 
     async def broadcast(self, message: str):
-        # Iterujemy po kopii żeby uniknąć błędów gdy ktoś się rozłączy w trakcie
         for connection in list(self.active_connections.values()):
             try:
                 await connection.send_text(message)
@@ -117,7 +151,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str, pwd: str = Qu
                           (msg["user"], msg["text"], msg["time"], msg.get("type", "text")))
                 conn.commit()
                 conn.close()
-                # Broadcast do wszystkich — włącznie z nadawcą
                 await manager.broadcast(json.dumps(msg))
 
             elif msg.get("type") == "user-joined-voice":
@@ -143,5 +176,4 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str, pwd: str = Qu
     except WebSocketDisconnect:
         voice_users.discard(client_id)
         manager.disconnect(client_id)
-        # Powiedz wszystkim że użytkownik wyszedł i zaktualizuj listę
         await manager.update_user_list()

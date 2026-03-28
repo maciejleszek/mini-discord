@@ -1,57 +1,35 @@
 document.addEventListener('DOMContentLoaded', () => {
     let clientId, password, ws, localStream, isMuted = false;
+    let iceConfig = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    };
     const peers = {};
 
-    // ---------------------------------------------------------------
-    // KONFIGURACJA ICE — STUN + TURN
-    // Zarejestruj się na https://www.metered.ca/tools/openrelay/ (darmowe)
-    // i zastąp poniższe dane swoimi credentials z panelu Metered.
-    // Bez serwera TURN głos NIE będzie działał przez NAT/firewalle!
-    // ---------------------------------------------------------------
-    const iceConfig = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
-        ]
-    };
+    const chat      = document.getElementById('chat');
+    const msgInput  = document.getElementById('msg-input');
+    const imgInput  = document.getElementById('img-input');
+    const meterBar  = document.getElementById('meter-bar');
+    const voiceDot  = document.getElementById('voice-dot');
+    const vStatus   = document.getElementById('v-status');
 
-    const chat = document.getElementById('chat');
-    const msgInput = document.getElementById('msg-input');
-    const imgInput = document.getElementById('img-input');
-    const meterBar = document.getElementById('meter-bar');
-
-    // Logowanie
-    document.getElementById('login-btn').onclick = () => {
+    // ── Login ─────────────────────────────────────────────────────
+    function tryLogin() {
         clientId = document.getElementById('nick').value.trim();
         password = document.getElementById('pass').value.trim();
         if (clientId && password) initApp();
-        else alert("Wpisz nick i hasło!");
-    };
+        else alert('Wpisz nick i hasło!');
+    }
 
-    document.getElementById('pass').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') document.getElementById('login-btn').click();
-    });
+    document.getElementById('login-btn').addEventListener('click', tryLogin);
+    document.getElementById('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
+    document.getElementById('nick').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('pass').focus(); });
 
+    // ── App init ──────────────────────────────────────────────────
     function initApp() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${window.location.host}/ws/${encodeURIComponent(clientId)}?pwd=${encodeURIComponent(password)}`);
 
-        ws.onopen = () => console.log("WebSocket połączony");
+        ws.onopen = () => console.log('WS połączony');
 
         ws.onmessage = async (e) => {
             const data = JSON.parse(e.data);
@@ -62,7 +40,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Ukryj overlay po pierwszej poprawnej wiadomości
             document.getElementById('login-overlay').style.display = 'none';
 
             switch (data.type) {
@@ -70,8 +47,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     data.messages.forEach(m => appendMessage(m.user, m.text, m.time, m.type));
                     break;
 
+                // Serwer przesyła kredencjale TURN — zapisujemy globalnie
+                case 'ice-config':
+                    iceConfig = data.config;
+                    console.log('✅ ICE config załadowany z serwera');
+                    break;
+
                 case 'user-list':
-                    document.getElementById('user-list').innerHTML = data.users.join('<br>');
+                    renderUserList(data.users);
                     break;
 
                 case 'text':
@@ -79,18 +62,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     appendMessage(data.user, data.text, data.time, data.type);
                     break;
 
-                // Serwer zwraca listę użytkowników już będących w kanale głosowym
-                // — tylko MY inicjujemy do nich połączenie (unikamy duplikatów)
                 case 'voice-peers':
                     for (const peerId of data.peers) {
                         if (localStream) await callUser(peerId);
                     }
                     break;
 
-                // Ktoś nowy dołączył do głosu — on zainicjuje do nas połączenie,
-                // my tylko czekamy na offer (nic nie robimy tutaj)
                 case 'user-joined':
-                    console.log("Użytkownik dołączył do głosu:", data.userId);
+                    console.log('Dołączył do głosu:', data.userId);
                     break;
 
                 case 'user-left':
@@ -98,29 +77,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
 
                 default:
-                    handleSignaling(data);
+                    await handleSignaling(data);
             }
         };
 
-        ws.onclose = () => {
-            console.log("WebSocket rozłączony");
-            appendSystemMessage("Połączenie przerwane. Odśwież stronę.");
-        };
+        ws.onclose = () => appendSystemMessage('Połączenie przerwane. Odśwież stronę.');
+        ws.onerror = (err) => console.error('WS błąd:', err);
 
-        ws.onerror = (err) => {
-            console.error("WebSocket błąd:", err);
-        };
+        msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendText(); });
+        document.getElementById('send-btn').addEventListener('click', sendText);
 
-        // Wysyłanie wiadomości tekstowych — Enter
-        msgInput.onkeypress = (e) => {
-            if (e.key === 'Enter') sendTextMessage();
-        };
-
-        // Przycisk Wyślij (mobile)
-        document.getElementById('send-btn').onclick = sendTextMessage;
-
-        // Wysyłanie obrazów
-        imgInput.onchange = (e) => {
+        imgInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
@@ -129,19 +96,31 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             reader.readAsDataURL(file);
             imgInput.value = '';
-        };
+        });
 
         setupVoice();
     }
 
-    function sendTextMessage() {
+    function sendText() {
         const text = msgInput.value.trim();
         if (!text) return;
         ws.send(JSON.stringify({ type: 'text', user: clientId, text }));
         msgInput.value = '';
     }
 
-    // Wizualizator mikrofonu
+    // ── User list ─────────────────────────────────────────────────
+    function renderUserList(users) {
+        const el = document.getElementById('user-list');
+        el.innerHTML = '';
+        users.forEach(u => {
+            const pill = document.createElement('div');
+            pill.className = 'user-pill';
+            pill.innerHTML = `<div class="user-dot"></div>${escapeHtml(u)}`;
+            el.appendChild(pill);
+        });
+    }
+
+    // ── Visualizer ────────────────────────────────────────────────
     function startVisualizer(stream) {
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -150,94 +129,75 @@ document.addEventListener('DOMContentLoaded', () => {
             analyser.fftSize = 256;
             src.connect(analyser);
             const data = new Uint8Array(analyser.frequencyBinCount);
+            document.getElementById('meter-container').style.display = 'block';
 
-            function update() {
+            function tick() {
                 if (!localStream) return;
                 analyser.getByteFrequencyData(data);
                 const avg = data.reduce((a, b) => a + b, 0) / data.length;
                 meterBar.style.width = Math.min(avg * 2.5, 100) + '%';
-                requestAnimationFrame(update);
+                requestAnimationFrame(tick);
             }
-            update();
-        } catch (e) {
-            console.error("Visualizer error:", e);
-        }
+            tick();
+        } catch (e) { console.warn('Visualizer error:', e); }
     }
 
+    // ── Voice ─────────────────────────────────────────────────────
     function setupVoice() {
-        document.getElementById('voice-btn').onclick = async () => {
+        document.getElementById('voice-btn').addEventListener('click', async () => {
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-
                 document.getElementById('voice-btn').style.display = 'none';
                 document.getElementById('active-controls').style.display = 'flex';
-                document.getElementById('meter-container').style.display = 'block';
-                document.getElementById('v-status').innerText = 'Głos: Połączono ✅';
-
+                voiceDot.classList.add('live');
+                vStatus.textContent = 'Połączono';
                 startVisualizer(localStream);
-
-                // Informujemy serwer — serwer odpowie listą peers już w kanale
                 ws.send(JSON.stringify({ type: 'user-joined-voice', userId: clientId }));
-
             } catch (err) {
-                console.error("Mikrofon błąd:", err);
-                alert("Nie można uzyskać dostępu do mikrofonu.\nUpewnij się że strona działa przez HTTPS!");
+                console.error('Mikrofon:', err);
+                alert('Brak dostępu do mikrofonu.\nUpewnij się że strona działa przez HTTPS!');
             }
-        };
+        });
 
-        document.getElementById('mute-btn').onclick = () => {
+        document.getElementById('mute-btn').addEventListener('click', () => {
             isMuted = !isMuted;
-            if (localStream) {
-                localStream.getAudioTracks().forEach(track => track.enabled = !isMuted);
-            }
-            document.getElementById('mute-btn').innerText = isMuted ? 'Wyłącz Mute 🔈' : 'Wycisz 🔇';
-            document.getElementById('mute-btn').style.background = isMuted ? '#23a559' : '#4e5058';
-        };
+            if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+            document.getElementById('mute-btn').textContent = isMuted ? 'Wyłącz mute' : 'Wycisz';
+            document.getElementById('mute-btn').style.background = isMuted ? 'var(--success)' : 'var(--bg-3)';
+        });
 
-        document.getElementById('leave-btn').onclick = () => {
-            leaveVoice();
-        };
+        document.getElementById('leave-btn').addEventListener('click', leaveVoice);
     }
 
     function leaveVoice() {
-        if (localStream) {
-            localStream.getTracks().forEach(t => t.stop());
-            localStream = null;
-        }
+        if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
         Object.keys(peers).forEach(removePeer);
-
         ws.send(JSON.stringify({ type: 'user-left-voice', userId: clientId }));
-
         document.getElementById('voice-btn').style.display = 'block';
         document.getElementById('active-controls').style.display = 'none';
         document.getElementById('meter-container').style.display = 'none';
-        document.getElementById('v-status').innerText = 'Głos: Rozłączony';
+        voiceDot.classList.remove('live');
+        vStatus.textContent = 'Rozłączony';
         meterBar.style.width = '0%';
         isMuted = false;
     }
 
-    // Tworzenie RTCPeerConnection
+    // ── WebRTC ────────────────────────────────────────────────────
     function createPC(tid) {
-        if (peers[tid]) {
-            peers[tid].close();
-            delete peers[tid];
-        }
+        if (peers[tid]) { peers[tid].close(); delete peers[tid]; }
 
+        // Używamy iceConfig pobranego z serwera (Cloudflare TURN)
         const pc = new RTCPeerConnection(iceConfig);
         peers[tid] = pc;
 
-        if (localStream) {
-            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-        }
+        if (localStream) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
         pc.onicecandidate = (e) => {
-            if (e.candidate) {
-                ws.send(JSON.stringify({ candidate: e.candidate, target: tid, from: clientId }));
-            }
+            if (e.candidate) ws.send(JSON.stringify({ candidate: e.candidate, target: tid, from: clientId }));
         };
 
         pc.ontrack = (e) => {
-            console.log("✅ Otrzymano strumień audio od:", tid);
+            console.log('✅ Audio od:', tid);
             let audio = document.getElementById(`audio-${tid}`);
             if (!audio) {
                 audio = document.createElement('audio');
@@ -247,57 +207,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.body.appendChild(audio);
             }
             audio.srcObject = e.streams[0];
-
-            audio.play().catch(err => {
-                console.warn("Autoplay zablokowany, czekam na interakcję użytkownika:", err);
-                // Odblokuj po pierwszym kliknięciu
-                const unlock = () => { audio.play(); document.removeEventListener('click', unlock); };
-                document.addEventListener('click', unlock);
+            audio.play().catch(() => {
+                document.addEventListener('click', () => audio.play(), { once: true });
             });
         };
 
         pc.onconnectionstatechange = () => {
             console.log(`Połączenie z ${tid}: ${pc.connectionState}`);
-            if (pc.connectionState === 'failed') {
-                console.warn(`Połączenie z ${tid} nie powiodło się. Spróbuj ponownie.`);
-                removePeer(tid);
-            }
-        };
-
-        pc.oniceconnectionstatechange = () => {
-            console.log(`ICE z ${tid}: ${pc.iceConnectionState}`);
+            if (pc.connectionState === 'failed') removePeer(tid);
         };
 
         return pc;
     }
 
-    // My inicjujemy — wysyłamy offer
     async function callUser(id) {
-        console.log("Dzwonię do:", id);
         const pc = createPC(id);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        ws.send(JSON.stringify({ offer: offer, target: id, from: clientId }));
+        ws.send(JSON.stringify({ offer, target: id, from: clientId }));
     }
 
-    // Ktoś zadzwonił do nas — odpowiadamy answer
     async function handleOffer(offer, id) {
-        console.log("Odbieram offer od:", id);
         const pc = createPC(id);
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ answer: answer, target: id, from: clientId }));
+        ws.send(JSON.stringify({ answer, target: id, from: clientId }));
     }
 
     function removePeer(id) {
-        if (peers[id]) {
-            peers[id].close();
-            delete peers[id];
-        }
+        if (peers[id]) { peers[id].close(); delete peers[id]; }
         const audio = document.getElementById(`audio-${id}`);
         if (audio) audio.remove();
-        console.log("Usunięto peera:", id);
     }
 
     async function handleSignaling(d) {
@@ -306,38 +247,34 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (d.answer && peers[d.from]) {
             await peers[d.from].setRemoteDescription(new RTCSessionDescription(d.answer));
         } else if (d.candidate && peers[d.from]) {
-            try {
-                await peers[d.from].addIceCandidate(new RTCIceCandidate(d.candidate));
-            } catch (e) {
-                console.warn("Błąd dodawania ICE candidate:", e);
-            }
+            try { await peers[d.from].addIceCandidate(new RTCIceCandidate(d.candidate)); }
+            catch (e) { console.warn('ICE candidate błąd:', e); }
         }
     }
 
+    // ── Helpers ───────────────────────────────────────────────────
     function appendMessage(u, c, t, type) {
         const d = document.createElement('div');
         d.className = 'msg';
-        const content = (type === 'image') ? `<img src="${c}" loading="lazy">` : `<span>${escapeHtml(c)}</span>`;
-        d.innerHTML = `<b>${escapeHtml(u)}<span class="msg-time">${t || ''}</span></b>${content}`;
+        const content = (type === 'image')
+            ? `<img src="${c}" loading="lazy">`
+            : `<div class="msg-text">${escapeHtml(c)}</div>`;
+        d.innerHTML = `<div class="msg-author">${escapeHtml(u)}<span class="msg-time">${t || ''}</span></div>${content}`;
         chat.appendChild(d);
         chat.scrollTop = chat.scrollHeight;
     }
 
     function appendSystemMessage(text) {
         const d = document.createElement('div');
-        d.className = 'msg';
-        d.style.background = '#2a2a2a';
-        d.style.color = '#949ba4';
-        d.style.fontStyle = 'italic';
-        d.innerHTML = `<span>⚠️ ${escapeHtml(text)}</span>`;
+        d.className = 'msg msg-system';
+        d.textContent = text;
         chat.appendChild(d);
         chat.scrollTop = chat.scrollHeight;
     }
 
-    // Zabezpieczenie przed XSS
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.appendChild(document.createTextNode(text));
-        return div.innerHTML;
+    function escapeHtml(str) {
+        const d = document.createElement('div');
+        d.appendChild(document.createTextNode(String(str)));
+        return d.innerHTML;
     }
 });
